@@ -27,16 +27,16 @@ public class RestClientExample {
     private static ObjectMapper mapper = new ObjectMapper();
 
     public static void main(String[] args) throws Exception {
-        // credentials for thingsboard
-        String tenantUsername = "tenant@thingsboard.org";
-        String tenantPassword = "tenant";
-
-        // url for thingsboard
+        // ThingsBoard REST API URL
         String url = "http://localhost:8080";
+
+        // Default Tenant Administrator credentials
+        String username = "tenant@thingsboard.org";
+        String password = "tenant";
 
         // creating new rest restClient and auth with credentials
         RestClient restClient = new RestClient(url);
-        restClient.login(tenantUsername, tenantPassword);
+        restClient.login(username, password);
 
         // Creating Dashboard Group on the Tenant Level
         EntityGroup sharedDashboardsGroup = new EntityGroup();
