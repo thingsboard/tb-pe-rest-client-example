@@ -8,35 +8,93 @@ import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.Dashboard;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.EntityType;
+import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.group.EntityGroup;
 import org.thingsboard.server.common.data.group.EntityGroupInfo;
-import org.thingsboard.server.common.data.id.EntityGroupId;
 import org.thingsboard.server.common.data.permission.GroupPermission;
 import org.thingsboard.server.common.data.permission.Operation;
 import org.thingsboard.server.common.data.role.Role;
 import org.thingsboard.server.common.data.security.Authority;
+import org.thingsboard.server.common.data.security.DeviceCredentials;
+import org.thingsboard.server.common.data.widget.WidgetType;
+import org.thingsboard.server.common.data.widget.WidgetsBundle;
 
-import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RestClientExample {
 
     private static ObjectMapper mapper = new ObjectMapper();
+    private RestClient restClient;
+    private ExecutorService httpExecutor = Executors.newCachedThreadPool();
 
     public static void main(String[] args) throws Exception {
+        new RestClientExample().run();
+    }
+
+    public void run() throws Exception {
         // ThingsBoard REST API URL
-        String url = "http://localhost:8080";
+        final String url = "http://localhost:8080";
 
-        // Default Tenant Administrator credentials
-        String username = "tenant@thingsboard.org";
-        String password = "tenant";
+        // Default System Administrator credentials
+        final String username = "sysadmin@thingsboard.org";
+        final String password = "sysadmin";
 
-        // creating new rest restClient and auth with credentials
-        RestClient restClient = new RestClient(url);
-        restClient.login(username, password);
+        // creating new rest restClient and auth with system administrator credentials
+        restClient = new RestClient(url);
+        login(username, password);
+
+        // Creating Tenant
+        Tenant tenant = new Tenant();
+        tenant.setTitle("Test Tenant");
+        tenant = restClient.saveTenant(tenant);
+
+        final String tenantUsername = "testtenant@thingsboard.org";
+        final String tenantPassword = "testtenant";
+
+        // Created User for Tenant
+        User tenantUser = new User();
+        tenantUser.setAuthority(Authority.TENANT_ADMIN);
+        tenantUser.setEmail(tenantUsername);
+        tenantUser.setTenantId(tenant.getId());
+
+        tenantUser = restClient.saveUser(tenantUser, false);
+        restClient.activateUser(tenantUser.getId(), tenantPassword);
+
+        // login with Tenant
+        login(tenantUsername, tenantPassword);
+
+        // Loading Widget from file
+        Path widgetFilePath = Paths.get("src/main/resources/custom_widget.json");
+        JsonNode widgetJson = mapper.readTree(Files.readAllBytes(widgetFilePath));
+
+        WidgetsBundle widgetsBundle = new WidgetsBundle();
+        widgetsBundle.setTitle(widgetJson.get("widgetsBundle").get("title").asText());
+        widgetsBundle.setAlias(widgetJson.get("widgetsBundle").get("alias").asText());
+        final WidgetsBundle bundle = restClient.saveWidgetsBundle(widgetsBundle);
+
+        WidgetType widgetType = new WidgetType();
+        JsonNode widgetTypes = widgetJson.get("widgetTypes");
+        CountDownLatch latch = new CountDownLatch(widgetTypes.size());
+        widgetTypes.forEach(type -> httpExecutor.submit(() -> {
+            try {
+                widgetType.setName(type.get("alias").asText());
+                widgetType.setAlias(type.get("alias").asText());
+                widgetType.setBundleAlias(bundle.getAlias());
+                widgetType.setDescriptor(type.get("descriptor"));
+                restClient.saveWidgetType(widgetType);
+            } finally {
+                latch.countDown();
+            }
+        }));
+        latch.await();
 
         // Creating Dashboard Group on the Tenant Level
         EntityGroup sharedDashboardsGroup = new EntityGroup();
@@ -63,7 +121,12 @@ public class RestClientExample {
         waterMeter1.setCustomerId(customer1.getId());
         waterMeter1.setName("WaterMeter1");
         waterMeter1.setType("waterMeter");
-        restClient.saveDevice(waterMeter1);
+        waterMeter1 = restClient.saveDevice(waterMeter1);
+
+        // Update device token
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(waterMeter1.getId()).get();
+        deviceCredentials.setCredentialsId("new_device_token");
+        restClient.saveDeviceCredentials(deviceCredentials);
 
         // Fetching automatically created "Customer Administrators" Group.
         EntityGroupInfo customer1Administrators = restClient.getEntityGroupInfoByOwnerAndNameAndType(customer1.getId(), EntityType.USER, "Customer Administrators").get();
@@ -94,5 +157,11 @@ public class RestClientExample {
         restClient.activateUser(user.getId(), userPassword);
 
         restClient.addEntitiesToEntityGroup(customer1Administrators.getId(), Collections.singletonList(user.getId()));
+
+        httpExecutor.shutdownNow();
+    }
+
+    private void login(String username, String password) {
+        restClient.login(username, password);
     }
 }
