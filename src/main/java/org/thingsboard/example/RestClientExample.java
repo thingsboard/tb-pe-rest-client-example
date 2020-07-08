@@ -1,5 +1,6 @@
 package org.thingsboard.example;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -15,6 +16,8 @@ import org.thingsboard.server.common.data.group.EntityGroupInfo;
 import org.thingsboard.server.common.data.permission.GroupPermission;
 import org.thingsboard.server.common.data.permission.Operation;
 import org.thingsboard.server.common.data.role.Role;
+import org.thingsboard.server.common.data.rule.RuleChain;
+import org.thingsboard.server.common.data.rule.RuleChainMetaData;
 import org.thingsboard.server.common.data.security.Authority;
 import org.thingsboard.server.common.data.security.DeviceCredentials;
 import org.thingsboard.server.common.data.widget.WidgetType;
@@ -25,15 +28,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class RestClientExample {
 
     private static ObjectMapper mapper = new ObjectMapper();
     private RestClient restClient;
-    private ExecutorService httpExecutor = Executors.newCachedThreadPool();
 
     public static void main(String[] args) throws Exception {
         new RestClientExample().run();
@@ -75,6 +74,11 @@ public class RestClientExample {
 //        Path widgetFilePath = Paths.get("src/main/resources/custom_widget.json");
 //        JsonNode widgetJson = mapper.readTree(Files.readAllBytes(widgetFilePath));
 //        loadWidget(widgetJson);
+
+        // Loading Rule Chain from file
+//        Path ruleChainFilePath = Paths.get("src/main/resources/rule_chain.json");
+//        JsonNode ruleChainJson = mapper.readTree(Files.readAllBytes(ruleChainFilePath));
+//        loadRuleChain(ruleChainJson, false);
 
         // Creating Dashboard Group on the Tenant Level
         EntityGroup sharedDashboardsGroup = new EntityGroup();
@@ -137,15 +141,13 @@ public class RestClientExample {
         restClient.activateUser(user.getId(), userPassword);
 
         restClient.addEntitiesToEntityGroup(customer1Administrators.getId(), Collections.singletonList(user.getId()));
-
-        httpExecutor.shutdownNow();
     }
 
     private void login(String username, String password) {
         restClient.login(username, password);
     }
 
-    private void loadWidget(JsonNode widgetJson) throws InterruptedException {
+    private void loadWidget(JsonNode widgetJson) {
         WidgetsBundle widgetsBundle = new WidgetsBundle();
         widgetsBundle.setTitle(widgetJson.get("widgetsBundle").get("title").asText());
         widgetsBundle.setAlias(widgetJson.get("widgetsBundle").get("alias").asText());
@@ -153,18 +155,24 @@ public class RestClientExample {
 
         WidgetType widgetType = new WidgetType();
         JsonNode widgetTypes = widgetJson.get("widgetTypes");
-        CountDownLatch latch = new CountDownLatch(widgetTypes.size());
-        widgetTypes.forEach(type -> httpExecutor.submit(() -> {
-            try {
-                widgetType.setName(type.get("alias").asText());
-                widgetType.setAlias(type.get("alias").asText());
-                widgetType.setBundleAlias(bundle.getAlias());
-                widgetType.setDescriptor(type.get("descriptor"));
-                restClient.saveWidgetType(widgetType);
-            } finally {
-                latch.countDown();
-            }
-        }));
-        latch.await();
+        widgetTypes.forEach(type -> {
+                    widgetType.setName(type.get("alias").asText());
+                    widgetType.setAlias(type.get("alias").asText());
+                    widgetType.setBundleAlias(bundle.getAlias());
+                    widgetType.setDescriptor(type.get("descriptor"));
+                    restClient.saveWidgetType(widgetType);
+                }
+        );
+    }
+
+    private void loadRuleChain(JsonNode ruleChainJson, boolean root) throws JsonProcessingException {
+        RuleChain ruleChain = mapper.treeToValue(ruleChainJson.get("ruleChain"), RuleChain.class);
+        RuleChainMetaData ruleChainMetaData = mapper.treeToValue(ruleChainJson.get("metadata"), RuleChainMetaData.class);
+        RuleChain savedRuleChain = restClient.saveRuleChain(ruleChain);
+        ruleChainMetaData.setRuleChainId(savedRuleChain.getId());
+        restClient.saveRuleChainMetaData(ruleChainMetaData);
+        if (root) {
+            restClient.setRootRuleChain(savedRuleChain.getId());
+        }
     }
 }

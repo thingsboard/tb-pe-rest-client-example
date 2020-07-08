@@ -1,0 +1,64 @@
+{
+  "ruleChain": {
+    "additionalInfo": null,
+    "name": "Rule Chain",
+    "firstRuleNodeId": null,
+    "root": false,
+    "debugMode": false,
+    "configuration": null
+  },
+  "metadata": {
+    "firstNodeIndex": 2,
+    "nodes": [
+      {
+        "additionalInfo": {
+          "layoutX": 598,
+          "layoutY": 252
+        },
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgTimeseriesNode",
+        "name": "Save Timeseries",
+        "debugMode": false,
+        "configuration": {
+          "defaultTTL": 0
+        }
+      },
+      {
+        "additionalInfo": {
+          "layoutX": 591,
+          "layoutY": 76
+        },
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgAttributesNode",
+        "name": "Save Attributes",
+        "debugMode": false,
+        "configuration": {
+          "scope": "CLIENT_SCOPE"
+        }
+      },
+      {
+        "additionalInfo": {
+          "layoutX": 293,
+          "layoutY": 151
+        },
+        "type": "org.thingsboard.rule.engine.filter.TbMsgTypeSwitchNode",
+        "name": "Message Type Switch",
+        "debugMode": false,
+        "configuration": {
+          "version": 0
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromIndex": 2,
+        "toIndex": 1,
+        "type": "Post attributes"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 0,
+        "type": "Post telemetry"
+      }
+    ],
+    "ruleChainConnections": null
+  }
+}
